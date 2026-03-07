@@ -16,24 +16,29 @@ A live tennis match prediction dashboard for ATP and WTA tours. Uses Elo ratings
 - `p1_serve_win_rate`, `p1_return_win_rate` — in-match point win rates (defaults to tour averages early on)
 - `p1_serve_points`, `p1_return_points` — point counts (lets model discount extreme early-match stats)
 
-## Setup
+## Local setup
+
+**Prerequisites:** Python 3.12+, [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
+git clone https://github.com/AlexMangiafico/tennis-predictor.git
+cd tennis-predictor
 uv sync
 ```
 
-## Usage
+**Train the models** — downloads ~500MB of historical data and trains ATP and WTA models. Only needs to be done once (or re-run to update with new match data):
 
-**Train models** (downloads data ~500MB, takes a few minutes):
 ```bash
 python train.py
 ```
 
-**Run the web dashboard:**
+**Run the dashboard:**
+
 ```bash
 python app.py
 ```
-Then open `http://localhost:5000` in your browser. The dashboard auto-refreshes every 30 seconds.
+
+Open `http://localhost:5001` in your browser. The dashboard shows today's ATP and WTA matches with live win probabilities and auto-refreshes every 30 seconds.
 
 ## Data sources
 
