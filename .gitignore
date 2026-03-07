@@ -9,9 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# Data files (downloaded at runtime, excluded except trained models)
-data/*.csv
-data/*.gz
+# Data files (downloaded at runtime)
+data/
 
 # IDE
 .idea/

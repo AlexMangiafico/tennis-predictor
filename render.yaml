@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: tennis-predictor
-    runtime: python
-    buildCommand: pip install uv && uv sync
-    startCommand: python app.py
-    envVars:
-      - key: PORT
-        value: 10000
