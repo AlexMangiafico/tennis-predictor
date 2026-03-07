@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tennis Predictions</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #111827;
+      color: #d1d5db;
+      font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+      font-size: 13px;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 18px; color: #f9fafb; font-weight: 600; letter-spacing: 0.5px; }
+    #meta { color: #6b7280; font-size: 12px; }
+    #countdown { color: #60a5fa; }
+
+    /* ── Section labels ── */
+    .section-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #4b5563;
+      padding: 12px 0 4px;
+    }
+
+    /* ── Table ── */
+    table { border-collapse: collapse; width: 100%; }
+
+    thead th {
+      background: #1f2937;
+      color: #9ca3af;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 8px 10px;
+      text-align: center;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    thead th.left { text-align: left; }
+
+    /* Sub-header row */
+    thead tr.subhead th {
+      font-size: 11px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #6b7280;
+      padding: 3px 10px 6px;
+      background: #1f2937;
+    }
+
+    /* Match rows */
+    tr.p1-row td { padding: 7px 10px 2px; }
+    tr.p2-row td { padding: 2px 10px 7px; }
+    tr.divider td { border-top: 1px solid #1f2937; }
+
+    tr.live-row td { background: #1e3a5f; }
+    tr.live-row.divider td { border-top-color: #2563eb44; }
+
+    td.meta-cell {
+      vertical-align: middle;
+      white-space: nowrap;
+      color: #9ca3af;
+    }
+
+    /* Tournament + score span two rows */
+    td.tny  { font-size: 12px; color: #e5e7eb; white-space: nowrap; }
+    td.score-cell { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+
+    .badge-live {
+      display: inline-block;
+      background: #dc2626;
+      color: #fff;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .badge-pre { color: #4b5563; font-size: 11px; }
+    .season-avg { color: #6b7280; font-size: 10px; font-style: italic; margin-left: 4px; }
+
+    /* Player name */
+    td.name-cell { white-space: nowrap; }
+    .dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #f59e0b;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .no-dot { display: inline-block; width: 12px; margin-right: 6px; }
+
+    /* Probability cells */
+    td.pct {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      border-radius: 3px;
+      padding: 3px 8px;
+      min-width: 52px;
+      white-space: nowrap;
+    }
+    td.pct-pre {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      padding: 3px 8px;
+      min-width: 52px;
+      white-space: nowrap;
+      color: #9ca3af;
+      border-left: 1px solid #374151;
+    }
+    td.empty-pct { min-width: 52px; }
+
+    /* Separator between scenario groups */
+    td.group-sep { width: 16px; }
+
+    #error { color: #ef4444; padding: 20px 0; }
+    #loading { color: #6b7280; padding: 20px 0; }
+
+    /* ── Tour tabs ── */
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tab-btn {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #9ca3af;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      padding: 6px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { background: #273549; color: #d1d5db; }
+    .tab-btn.active {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Tennis Predictions</h1>
+  <span id="meta">Loading…</span>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tab-atp" onclick="setTour('atp')">ATP</button>
+  <button class="tab-btn" id="tab-wta" onclick="setTour('wta')">WTA</button>
+</div>
+
+<div id="loading">Fetching data…</div>
+<div id="error" style="display:none"></div>
+<div id="content"></div>
+
+<script>
+  function pct(v) {
+    if (v === null || v === undefined) return '';
+    return (v * 100).toFixed(1) + '%';
+  }
+
+  // Green (120°) for high prob, red (0°) for low
+  function probStyle(v) {
+    if (v === null || v === undefined) return '';
+    const hue = Math.round(v * 120);
+    const sat = 55, lit = 32;
+    return `background:hsl(${hue},${sat}%,${lit}%);color:#f9fafb;`;
+  }
+
+  function pctCell(v, cls = 'pct') {
+    if (v === null || v === undefined) return `<td class="${cls} empty-pct"></td>`;
+    return `<td class="${cls}" style="${probStyle(v)}">${pct(v)}</td>`;
+  }
+
+  let _lastData = null;
+  let _activeTour = 'atp';
+
+  function setTour(tour) {
+    _activeTour = tour;
+    document.getElementById('tab-atp').classList.toggle('active', tour === 'atp');
+    document.getElementById('tab-wta').classList.toggle('active', tour === 'wta');
+    if (_lastData) renderTour(_lastData);
+  }
+
+  function render(data) {
+    _lastData = data;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('meta').innerHTML =
+      'Updated <strong>' + new Date(data.updated).toLocaleTimeString() + '</strong>'
+      + ' &nbsp;·&nbsp; refreshing in <span id="countdown">30</span>s';
+    renderTour(data);
+  }
+
+  function renderTour(data) {
+    const matches = data[_activeTour] || [];
+    if (!matches.length) {
+      document.getElementById('content').innerHTML =
+        '<p style="color:#6b7280;padding:20px 0">No matches found.</p>';
+      return;
+    }
+
+    const live = matches.filter(m => m.state === 'live');
+    const pre  = matches.filter(m => m.state === 'pre');
+
+    let html = '';
+
+    // ── Live section ──────────────────────────────────────────────────
+    if (live.length) {
+      html += '<div class="section-label">Live</div>';
+      html += buildTable(live, true);
+    }
+
+    // ── Pre-match section ─────────────────────────────────────────────
+    if (pre.length) {
+      html += '<div class="section-label" style="margin-top:24px">Upcoming</div>';
+      html += buildPreTable(pre);
+    }
+
+    document.getElementById('content').innerHTML = html;
+  }
+
+  function buildTable(matches, isLive) {
+    let h = `
+      <table>
+        <thead>
+          <tr>
+            <th class="left" rowspan="2">Tournament</th>
+            <th rowspan="2"></th>
+            <th rowspan="2">Score</th>
+            <th class="left" rowspan="2">Player</th>
+            <th rowspan="2">Now</th>
+            <th class="group-sep" rowspan="2"></th>
+            <th colspan="2">If game won by</th>
+            <th class="group-sep" rowspan="2"></th>
+            <th colspan="2">If set won by</th>
+            <th class="group-sep" rowspan="2"></th>
+            <th rowspan="2" style="border-left:1px solid #374151">Pre</th>
+          </tr>
+          <tr class="subhead">
+    `;
+    // Sub-header labels filled in per-match by JS — but since they vary per match,
+    // we keep a generic label here
+    h += `<th>+P1</th><th>+P2</th><th>+P1</th><th>+P2</th>`;
+    h += `</tr></thead><tbody>`;
+
+    matches.forEach((m, i) => {
+      const p1last = m.p1_name.split(' ').pop();
+      const p2last = m.p2_name.split(' ').pop();
+      const liveCls = ' live-row';
+      const divCls = i > 0 ? ' divider' : '';
+
+      const badge = `<span class="badge-live">LIVE</span>`;
+
+      const p1dot = m.p1_serving ? '<span class="dot"></span>' : '<span class="no-dot"></span>';
+      const p2dot = !m.p1_serving ? '<span class="dot"></span>' : '<span class="no-dot"></span>';
+
+      h += `
+        <tr class="p1-row${liveCls}${divCls}">
+          <td class="tny" rowspan="2">${m.tournament}</td>
+          <td class="meta-cell" rowspan="2">${badge}</td>
+          <td class="score-cell" rowspan="2">${m.score}</td>
+          <td class="name-cell">${p1dot}${m.p1_name}</td>
+          ${pctCell(m.p1_now)}
+          <td class="group-sep" rowspan="2"></td>
+          ${pctCell(m.p1_p1game)}
+          ${pctCell(m.p1_p2game)}
+          <td class="group-sep" rowspan="2"></td>
+          ${pctCell(m.p1_p1set)}
+          ${pctCell(m.p1_p2set)}
+          <td class="group-sep" rowspan="2"></td>
+          ${pctCell(m.p1_pre, 'pct-pre')}
+        </tr>
+        <tr class="p2-row${liveCls}">
+          <td class="name-cell">${p2dot}${m.p2_name}</td>
+          ${pctCell(m.p2_now)}
+          ${pctCell(m.p2_p1game)}
+          ${pctCell(m.p2_p2game)}
+          ${pctCell(m.p2_p1set)}
+          ${pctCell(m.p2_p2set)}
+          ${pctCell(m.p2_pre, 'pct-pre')}
+        </tr>
+      `;
+    });
+
+    h += '</tbody></table>';
+    return h;
+  }
+
+  function buildPreTable(matches) {
+    let h = `
+      <table>
+        <thead>
+          <tr>
+            <th class="left">Tournament</th>
+            <th class="left" colspan="2">Match</th>
+            <th>Win %</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    matches.forEach((m, i) => {
+      const divCls = i > 0 ? ' divider' : '';
+      h += `
+        <tr class="p1-row${divCls}">
+          <td class="tny" rowspan="2">${m.tournament}</td>
+          <td class="name-cell" colspan="2">${m.p1_name}</td>
+          ${pctCell(m.p1_pre)}
+        </tr>
+        <tr class="p2-row">
+          <td class="name-cell" colspan="2">${m.p2_name}</td>
+          ${pctCell(m.p2_pre)}
+        </tr>
+      `;
+    });
+    h += '</tbody></table>';
+    return h;
+  }
+
+  // ── Polling ───────────────────────────────────────────────────────────
+  function refresh() {
+    fetch('/data')
+      .then(r => r.json())
+      .then(data => render(data))
+      .catch(e => {
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').textContent = 'Failed to fetch data: ' + e;
+      });
+  }
+
+  refresh();
+
+  let secs = 30;
+  setInterval(() => {
+    const el = document.getElementById('countdown');
+    if (el) {
+      secs--;
+      el.textContent = secs;
+      if (secs <= 0) {
+        secs = 30;
+        refresh();
+      }
+    }
+  }, 1000);
+</script>
+</body>
+</html>
