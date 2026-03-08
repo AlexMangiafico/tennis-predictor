@@ -304,12 +304,20 @@
     return h;
   }
 
+  function fmtTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+  }
+
   function buildPreTable(matches) {
     let h = `
       <table>
         <thead>
           <tr>
             <th class="left">Tournament</th>
+            <th>Time</th>
             <th class="left" colspan="2">Match</th>
             <th>Win %</th>
           </tr>
@@ -318,9 +326,11 @@
     `;
     matches.forEach((m, i) => {
       const divCls = i > 0 ? ' divider' : '';
+      const time = fmtTime(m.scheduled_time);
       h += `
         <tr class="p1-row${divCls}">
           <td class="tny" rowspan="2">${m.tournament}</td>
+          <td class="meta-cell" rowspan="2">${time}</td>
           <td class="name-cell" colspan="2">${m.p1_name}</td>
           ${pctCell(m.p1_pre)}
         </tr>

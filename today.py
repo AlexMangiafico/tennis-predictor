@@ -11,7 +11,7 @@ import pandas as pd
 from src.data import get_player_serve_stats, load_matches, load_wta_matches
 from src.elo import get_current_ratings, get_surface_ratings
 from src.features import build_live_features
-from src.model import load, prob_to_moneyline, win_probability
+from src.model import load, win_probability
 
 ESPN_ATP_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard"
 ATP_GATEWAY_URL = "https://app.atptour.com/api/v2/gateway/livematches/website?scoringTournamentLevel={level}"
@@ -62,6 +62,7 @@ def fetch_today_matches() -> list[dict]:
                     "p1_linescores": p1.get("linescores", []),
                     "p2_linescores": p2.get("linescores", []),
                     "serving": p1.get("possession", False),
+                    "scheduled_time": competition.get("date"),
                 })
 
     return matches
@@ -212,8 +213,6 @@ def fetch_gateway_matches(level: str) -> list[dict]:
                     p2_current_games = s2 or 0
                     break
 
-            live_stats = fetch_hawkeye_stats(event_id, match.get("MatchId", ""))
-
             matches.append({
                 "tournament": tny_name,
                 "p1_name": p1_name,
@@ -225,7 +224,10 @@ def fetch_gateway_matches(level: str) -> list[dict]:
                 "p2_games": p2_current_games,
                 "serving": match.get("ServerTeam") == 0,  # 0 = PlayerTeam serving
                 "source": "gateway",
-                "live_stats": live_stats,  # (swr, rwr, n_serve, n_return) or None
+                "live_stats": None,
+                "event_id": event_id,
+                "match_id": match.get("MatchId", ""),
+                "scheduled_time": match.get("MatchDate") or match.get("ScheduledTime"),
             })
 
     return matches
@@ -249,24 +251,43 @@ def parse_linescores(p1_scores: list, p2_scores: list) -> tuple[int, int, int, i
 
 
 def _fetch_all_matches() -> list[dict]:
-    """Fetch and dedup all matches from ESPN + ATP gateway."""
-    try:
-        today = fetch_today_matches()
-    except Exception as e:
-        print(f"Failed to fetch ESPN matches: {e}")
-        today = []
+    """Fetch and dedup all matches from ESPN + ATP gateway, with parallel HTTP calls."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    gateway_matches = []
-    seen = set()
-    for level in ("1000", "500", "250", "challenger"):
+    levels = ("1000", "500", "250", "challenger")
+
+    with ThreadPoolExecutor(max_workers=len(levels) + 1) as pool:
+        espn_future = pool.submit(fetch_today_matches)
+        gateway_futures = {pool.submit(fetch_gateway_matches, lvl): lvl for lvl in levels}
+
         try:
-            for m in fetch_gateway_matches(level):
-                key = frozenset({normalize(m["p1_name"]), normalize(m["p2_name"])})
-                if key not in seen:
-                    seen.add(key)
-                    gateway_matches.append(m)
-        except Exception:
-            pass
+            today = espn_future.result()
+        except Exception as e:
+            print(f"Failed to fetch ESPN matches: {e}")
+            today = []
+
+        gateway_matches = []
+        seen = set()
+        for future in as_completed(gateway_futures):
+            try:
+                for m in future.result():
+                    key = frozenset({normalize(m["p1_name"]), normalize(m["p2_name"])})
+                    if key not in seen:
+                        seen.add(key)
+                        gateway_matches.append(m)
+            except Exception:
+                pass
+
+    # Fetch Hawkeye in parallel for live gateway matches only
+    live = [m for m in gateway_matches if m["state"] == "in"]
+    if live:
+        with ThreadPoolExecutor(max_workers=len(live)) as pool:
+            futures = {
+                pool.submit(fetch_hawkeye_stats, m["event_id"], m["match_id"]): m
+                for m in live
+            }
+            for future in as_completed(futures):
+                futures[future]["live_stats"] = future.result()
 
     gateway_live_pairs = {
         frozenset({normalize(m["p1_name"]), normalize(m["p2_name"])})
@@ -360,6 +381,7 @@ def _build_match_row(m: dict, res: dict, surface: str | None, tour: str) -> dict
         "tournament": m.get("tournament", ""),
         "tour": tour,
         "state": "live" if is_live else "pre",
+        "scheduled_time": m.get("scheduled_time"),
         "score": f"{p1_sets}-{p2_sets}, {p1_games}-{p2_games}" if is_live else "",
         "p1_name": m["p1_name"],
         "p2_name": m["p2_name"],
