@@ -8,8 +8,6 @@ Uses ESPN's public scoreboard API (no key required).
 import re
 import requests
 import pandas as pd
-from src.data import get_player_serve_stats, load_matches, load_wta_matches
-from src.elo import get_current_ratings, get_surface_ratings
 from src.features import build_live_features
 from src.model import load, win_probability
 
@@ -447,17 +445,21 @@ def build_rows(atp_res: dict, wta_res: dict | None = None, live_only: bool = Fal
 
 
 def _load_tour_resources(tour: str) -> dict:
+    import pickle
+    from pathlib import Path
     from src.model import load as load_model
-    load_fn = load_matches if tour == "atp" else load_wta_matches
+
     model, feature_cols = load_model(tour)
-    matches_df = load_fn()
+    res_path = Path(__file__).parent / "data" / f"resources_{tour}.pkl"
+    with open(res_path, "rb") as f:
+        res = pickle.load(f)
     return {
         "model": model,
         "feature_cols": feature_cols,
-        "matches_df": matches_df,
-        "ratings": get_current_ratings(matches_df),
-        "surface_ratings": get_surface_ratings(matches_df),
-        "serve_stats": get_player_serve_stats(matches_df),
+        "matches_df": res["matches_df"],
+        "ratings": res["ratings"],
+        "surface_ratings": res["surface_ratings"],
+        "serve_stats": res["serve_stats"],
     }
 
 

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Download data, compute Elo, and train ATP and WTA models."""
 
-from src.data import download_atp_data, download_wta_data, load_matches, load_wta_matches
+import pickle
+from pathlib import Path
+
+from src.data import download_atp_data, download_wta_data, get_player_serve_stats, load_matches, load_wta_matches
 from src.elo import get_current_ratings, get_surface_ratings
 from src.model import save, train
 from src.pbp import build_pbp_training_rows, download_pbp_data, load_pbp_data
+
+DATA_DIR = Path(__file__).parent / "data"
 
 FEATURE_COLS = [
     "elo_diff", "surface_elo_diff", "sets_won", "sets_lost", "set_diff",
@@ -53,6 +58,19 @@ def train_tour(tour: str) -> None:
     print(f"Training on {len(X):,} examples...")
     model = train(X, y)
     save(model, FEATURE_COLS, tour=tour)
+
+    # Save runtime resources so the app doesn't need CSV files at startup
+    lookup_cols = ["winner_name", "winner_id", "loser_name", "loser_id", "tourney_name", "surface"]
+    resources = {
+        "ratings": ratings,
+        "surface_ratings": surface_ratings,
+        "serve_stats": get_player_serve_stats(matches),
+        "matches_df": matches[lookup_cols].copy(),
+    }
+    res_path = DATA_DIR / f"resources_{tour}.pkl"
+    with open(res_path, "wb") as f:
+        pickle.dump(resources, f)
+    print(f"Resources saved to {res_path}")
 
 
 def main():
