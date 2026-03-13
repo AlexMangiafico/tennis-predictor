@@ -194,6 +194,8 @@ def fetch_gateway_matches(level: str) -> list[dict]:
             p2_sets_won = 0
             p1_current_games = 0
             p2_current_games = 0
+            p1_completed_games = 0
+            p2_completed_games = 0
 
             for ps, os_ in zip(p1_sets_data, p2_sets_data):
                 s1 = ps.get("SetScore")
@@ -201,6 +203,8 @@ def fetch_gateway_matches(level: str) -> list[dict]:
                 if s1 is None and s2 is None:
                     break
                 if set_complete(s1, s2):
+                    p1_completed_games += s1
+                    p2_completed_games += s2
                     if s1 > s2:
                         p1_sets_won += 1
                     else:
@@ -220,6 +224,7 @@ def fetch_gateway_matches(level: str) -> list[dict]:
                 "p2_sets": p2_sets_won,
                 "p1_games": p1_current_games,
                 "p2_games": p2_current_games,
+                "games_margin_completed_sets": p1_completed_games - p2_completed_games,
                 "serving": match.get("ServerTeam") == 0,  # 0 = PlayerTeam serving
                 "source": "gateway",
                 "live_stats": None,
@@ -231,10 +236,10 @@ def fetch_gateway_matches(level: str) -> list[dict]:
     return matches
 
 
-def parse_linescores(p1_scores: list, p2_scores: list) -> tuple[int, int, int, int]:
-    """Return (p1_sets, p2_sets, p1_current_games, p2_current_games)."""
+def parse_linescores(p1_scores: list, p2_scores: list) -> tuple[int, int, int, int, int]:
+    """Return (p1_sets, p2_sets, p1_current_games, p2_current_games, games_margin_completed_sets)."""
     if not p1_scores:
-        return 0, 0, 0, 0
+        return 0, 0, 0, 0, 0
 
     def val(s):
         return int(s.get("value", 0) or 0)
@@ -242,10 +247,11 @@ def parse_linescores(p1_scores: list, p2_scores: list) -> tuple[int, int, int, i
     completed = list(zip(p1_scores[:-1], p2_scores[:-1])) if len(p1_scores) > 1 else []
     p1_sets = sum(1 for a, b in completed if val(a) > val(b))
     p2_sets = sum(1 for a, b in completed if val(b) > val(a))
+    games_margin_completed = sum(val(a) - val(b) for a, b in completed)
 
     p1_games = val(p1_scores[-1])
     p2_games = val(p2_scores[-1])
-    return p1_sets, p2_sets, p1_games, p2_games
+    return p1_sets, p2_sets, p1_games, p2_games, games_margin_completed
 
 
 def _fetch_all_matches() -> list[dict]:
@@ -330,8 +336,9 @@ def _build_match_row(m: dict, res: dict, surface: str | None, tour: str) -> dict
     if m.get("source") == "gateway":
         p1_sets, p2_sets = m["p1_sets"], m["p2_sets"]
         p1_games, p2_games = m["p1_games"], m["p2_games"]
+        games_margin_completed = m.get("games_margin_completed_sets", 0)
     else:
-        p1_sets, p2_sets, p1_games, p2_games = parse_linescores(
+        p1_sets, p2_sets, p1_games, p2_games, games_margin_completed = parse_linescores(
             m["p1_linescores"], m["p2_linescores"]
         )
 
@@ -346,8 +353,8 @@ def _build_match_row(m: dict, res: dict, surface: str | None, tour: str) -> dict
     pre_prob = win_probability(model, X_pre)
 
     def wp(sw, sl, gw, gl, swr=live_swr, rwr=live_rwr, serving=m["serving"],
-           n_serve=live_n_serve, n_return=live_n_return):
-        X = build_live_features(p1_elo, p2_elo, sw, sl, gw, gl, serving, swr, rwr, surface_elo_diff, n_serve, n_return)[feat_cols]
+           n_serve=live_n_serve, n_return=live_n_return, gm_completed=games_margin_completed):
+        X = build_live_features(p1_elo, p2_elo, sw, sl, gw, gl, serving, swr, rwr, surface_elo_diff, n_serve, n_return, gm_completed)[feat_cols]
         return win_probability(model, X)
 
     def set_over(g1, g2):
@@ -357,10 +364,14 @@ def _build_match_row(m: dict, res: dict, surface: str | None, tour: str) -> dict
 
     if is_live:
         live_prob = wp(p1_sets, p2_sets, p1_games, p2_games)
-        def wp_set(sw, sl):
-            return 0.5 * wp(sw, sl, 0, 0, serving=True) + 0.5 * wp(sw, sl, 0, 0, serving=False)
-        if_p1_set = 1.0 if p1_sets + 1 >= 2 else wp_set(p1_sets + 1, p2_sets)
-        if_p2_set = 0.0 if p2_sets + 1 >= 2 else wp_set(p1_sets, p2_sets + 1)
+        def wp_set(sw, sl, new_gm_completed):
+            return 0.5 * wp(sw, sl, 0, 0, serving=True, gm_completed=new_gm_completed) + \
+                   0.5 * wp(sw, sl, 0, 0, serving=False, gm_completed=new_gm_completed)
+        # When a set completes, add the current set's game scores to the completed margin
+        gm_if_p1_set = games_margin_completed + (p1_games - p2_games)
+        gm_if_p2_set = games_margin_completed + (p1_games - p2_games)
+        if_p1_set = 1.0 if p1_sets + 1 >= 2 else wp_set(p1_sets + 1, p2_sets, gm_if_p1_set)
+        if_p2_set = 0.0 if p2_sets + 1 >= 2 else wp_set(p1_sets, p2_sets + 1, gm_if_p2_set)
         sr_if_p1_game = set_over(p1_games + 1, p2_games)
         sr_if_p2_game = set_over(p1_games, p2_games + 1)
         next_serving = not m["serving"]

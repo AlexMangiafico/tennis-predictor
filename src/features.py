@@ -16,6 +16,7 @@ def build_live_features(
     surface_elo_diff: float = 0.0,
     p1_serve_points: int = 0,
     p1_return_points: int = 0,
+    games_margin_completed_sets: int = 0,
 ) -> pd.DataFrame:
     """Build a single-row feature vector for a live in-progress match."""
     row = {
@@ -27,6 +28,7 @@ def build_live_features(
         "games_won_current_set": games_won_current_set,
         "games_lost_current_set": games_lost_current_set,
         "game_diff_current_set": games_won_current_set - games_lost_current_set,
+        "games_margin_completed_sets": games_margin_completed_sets,
         "serving": int(serving),
         "p1_serve_win_rate": p1_serve_win_rate,
         "p1_return_win_rate": p1_return_win_rate,

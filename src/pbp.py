@@ -92,6 +92,10 @@ def parse_match_states(pbp_str: str, winner: int) -> list[dict]:
     s1_return_won = 0
     s1_return_total = 0
 
+    # Cumulative games won/lost across completed sets
+    s1_completed_games = 0
+    s2_completed_games = 0
+
     for set_str in pbp_str.split("."):
         s1_games = 0
         s2_games = 0
@@ -111,6 +115,7 @@ def parse_match_states(pbp_str: str, winner: int) -> list[dict]:
                 "games_won_current_set": s1_games,
                 "games_lost_current_set": s2_games,
                 "game_diff_current_set": s1_games - s2_games,
+                "games_margin_completed_sets": s1_completed_games - s2_completed_games,
                 "serving": int(s1_serving),
                 "p1_serve_win_rate": s1_serve_won / s1_serve_total if s1_serve_total > 0 else _SERVE_PRIOR,
                 "p1_return_win_rate": s1_return_won / s1_return_total if s1_return_total > 0 else _RETURN_PRIOR,
@@ -152,7 +157,9 @@ def parse_match_states(pbp_str: str, winner: int) -> list[dict]:
 
             total_games += 1
 
-        # Award set
+        # Award set and accumulate completed games
+        s1_completed_games += s1_games
+        s2_completed_games += s2_games
         if s1_games > s2_games:
             s1_sets += 1
         elif s2_games > s1_games:

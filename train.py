@@ -14,6 +14,7 @@ DATA_DIR = Path(__file__).parent / "data"
 FEATURE_COLS = [
     "elo_diff", "surface_elo_diff", "sets_won", "sets_lost", "set_diff",
     "games_won_current_set", "games_lost_current_set", "game_diff_current_set",
+    "games_margin_completed_sets",
     "serving", "p1_serve_win_rate", "p1_return_win_rate",
     "p1_serve_points", "p1_return_points",
 ]
